@@ -50,7 +50,7 @@ APG_ETU = [-1 -1 -1 0 0 0 -3 -5 -7];
 rayleigh_ETU = comm.RayleighChannel('SampleRate',Fs,'PathDelays',path_delay_ETU,'AveragePathGains',APG_ETU, 'MaximumDopplerShift', fd_etu,'NormalizePathGains',true,'PathGainsOutputPort',true);
 %% ИХ и ЧХ каналов
 
-% Nfft_ch = 2^12;
+ Nfft_ch = 2^12;
 % Fs_ch = 10^9;
 % T_ch = 1/Fs_ch;
 % df = Fs_ch/Nfft_ch;
