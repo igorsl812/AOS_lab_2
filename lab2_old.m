@@ -39,37 +39,37 @@ fd_eva = 70;
 fd_etu = 300;
 path_delay_EPA = [0 30 70 80 110 190 410]*10^-9;
 APG_EPA = [0 -1 -2 -3 -8 -17.2 -20.8];
-rayleigh_EPA = comm.RayleighChannel('SampleRate',Fs,'PathDelays',path_delay_EPA,'AveragePathGains',APG_EPA, 'MaximumDopplerShift', fd_epa,'NormalizePathGains',true,'PathGainsOutputPort',true);
+rayleigh_EPA = comm.RayleighChannel('SampleRate',Fs,'PathDelays',path_delay_EPA,'AveragePathGains',APG_EPA, 'MaximumDopplerShift', fd_epa,'NormalizePathGains',true);
 
 path_delay_EVA = [0 30 150 310 370 710 1090 1730 2510]*10^-9;
 APG_EVA = [0 -1.5 -1.4 -3.6 -0.6 -9.1 -7 -12 -16.9];
-rayleigh_EVA = comm.RayleighChannel('SampleRate',Fs,'PathDelays',path_delay_EVA,'AveragePathGains',APG_EVA, 'MaximumDopplerShift', fd_eva,'NormalizePathGains',true,'PathGainsOutputPort',true);
+rayleigh_EVA = comm.RayleighChannel('SampleRate',Fs,'PathDelays',path_delay_EVA,'AveragePathGains',APG_EVA, 'MaximumDopplerShift', fd_eva,'NormalizePathGains',true);
 
 path_delay_ETU = [0 50 120 200 230 500 1600 2300 5000]*10^-9;
 APG_ETU = [-1 -1 -1 0 0 0 -3 -5 -7];
-rayleigh_ETU = comm.RayleighChannel('SampleRate',Fs,'PathDelays',path_delay_ETU,'AveragePathGains',APG_ETU, 'MaximumDopplerShift', fd_etu,'NormalizePathGains',true,'PathGainsOutputPort',true);
+rayleigh_ETU = comm.RayleighChannel('SampleRate',Fs,'PathDelays',path_delay_ETU,'AveragePathGains',APG_ETU, 'MaximumDopplerShift', fd_etu,'NormalizePathGains',true);
 %% ИХ и ЧХ каналов
 
-% Nfft_ch = 2^12;
-% Fs_ch = 10^9;
-% T_ch = 1/Fs_ch;
-% df = Fs_ch/Nfft_ch;
-% f = -Fs_ch/2:df:(Fs_ch/2-df);
+Nfft_ch=2^12;
+Fs_ch = 10^9;
+T_ch = 1/Fs_ch;
+df = Fs_ch/Nfft_ch;
+f = -Fs_ch/2:df:(Fs_ch/2-df);
 
-% tao = path_delay_ETU;
-% P_db = APG_ETU;
-% P = 10.^(P_db / 20);
+tao = path_delay_ETU;
+P_db = APG_ETU;
+P = 10.^(P_db / 10);
 
-% h = zeros(1,round(max(tao)*Fs_ch+1));
-% h(round(tao*Fs_ch+1)) = sqrt(P);
+h = zeros(1,round(max(tao)*Fs_ch+1));
+h(round(tao*Fs_ch+1)) = sqrt(P);
 
-% H = fftshift(fft(h,Nfft_ch));
-% %графики
-% figure 
-% plot((0:length(h)-1)*T_ch, abs(h));
-% figure 
-% plot(f,abs(H));
-% xlim([-12e6, 12e6]);
+H = fftshift(fft(h,Nfft_ch));
+%графики
+figure 
+plot((0:length(h)-1)*T_ch, abs(h));
+figure 
+plot(f,abs(H));
+xlim([-12e6, 12e6]);
 
 %% канал 
 SNR_vector = 0:30; 
@@ -92,7 +92,6 @@ for idx_ber = 1:length(SNR_vector)
         
         bits = randi([0,1],n_inf_bits*k_inf,10);
         
-        rng(frame + idx_ber * 1000); 
         release(rayleigh_EPA)
         qamsymb = qammod(bits,M_inf,'InputType', 'bit','UnitAveragePower', true);
         % Формируем матрицу переданных бит в нужном формате
@@ -108,29 +107,22 @@ for idx_ber = 1:length(SNR_vector)
         OFDM_symb_cp = [OFDM_symb(:,end-CP_len+1:end),OFDM_symb];%zeros(10,CP_len) или OFDM_symb(:,end-CP_len+1:end)
 
         % АБГШ       
-        SNR_linear = 10^(SNR / 10);
-        
-        % Измеряем точную среднюю мощность чистого сигнала до добавления ЦП
-        P_sig = mean(abs(OFDM_symb).^2,'all'); 
-        
-        % Рассчитываем необходимую мощность шума
-        P_noise = P_sig / SNR_linear;
-        
-        % Амплитуда комплексного шума
-        sigma = sqrt(P_noise / 2);
-        
-        % Генерируем комплексный гауссовский шум
-        noise = sigma * (randn(size(OFDM_symb_cp)) + 1i * randn(size(OFDM_symb_cp)));
+        Eb =  mean(abs(qammod(0:M_inf-1, M_inf)).^2) / log2(M_inf) / Nfft;
+        N0 = Eb / 10^(SNR/10);
+        sigma = sqrt(N0/2);
+        noise = sigma*randn(size(OFDM_symb_cp)) + 1j*sigma*randn(size(OFDM_symb_cp));
+
         %преобразование в один сигнал для передачи
         OFDM_vector = OFDM_symb_cp.';
         OFDM_vector = OFDM_vector(:);
 
         % релей
-        [OFDM_rel,H_true] = rayleigh_EPA(OFDM_vector);
+        OFDM_rel = rayleigh_EPA(OFDM_vector);
         
-        OFDM_clean = reshape(OFDM_rel,size(OFDM_symb_cp,2),size(OFDM_symb_cp,1)).';% если без релея то OFDM_vector, иначе OFDM_rel
+        OFDM_clean = reshape(OFDM_vector,size(OFDM_symb_cp,2),size(OFDM_symb_cp,1)).';% если без релея то OFDM_vector, иначе OFDM_rel
         OFDM_clean_nocp = OFDM_clean(:, CP_len+1:end);
         OFDM_clean_fd = fftshift(fft(OFDM_clean_nocp, [], 2), 2);
+
         H_real_matrix = OFDM_clean_fd ./ tx_fd_sig;
         H_real_clean_method = mean(H_real_matrix, 1).'; 
         
@@ -153,7 +145,7 @@ for idx_ber = 1:length(SNR_vector)
         H_all_spline = interp1(pilot_sc,mean(H),1:Nfft,"spline","extrap");
         rx_data_equalized = OFDM_rx_fd./H_all;
         rx_data_equalized = rx_data_equalized(:,Y_inf); 
-        rx_data_demap = qamdemod(rx_data_equalized, 16,'OutputType', 'bit','UnitAveragePower', true);% если без релея то = rx_symbs, с релеем rx_data_equalized
+        rx_data_demap = qamdemod(rx_symbs, 16,'OutputType', 'bit','UnitAveragePower', true);% если без релея то = rx_symbs, с релеем rx_data_equalized
         % Считаем ошибки текущего фрейма
         [numErrors, ~] = biterr(bits_dem(:), rx_data_demap(:));
 
@@ -181,110 +173,135 @@ end
 
 
 %% Построение доплеровских спектров
-% FsEPA = 100;
-% FsEVA = 1000;
-% FsETU = 10000;
-% 
-% chEPA = comm.RayleighChannel('SampleRate',FsEPA,'PathDelays',path_delay_EPA,'AveragePathGains',APG_EPA, 'MaximumDopplerShift', 5,'NormalizePathGains',true,'DopplerSpectrum', doppler('Jakes'), ...
-%     'ChannelFiltering', false, ...
-%     'NumSamples', 10000000);
-% chEVA = comm.RayleighChannel('SampleRate',FsEVA,'PathDelays',path_delay_EVA,'AveragePathGains',APG_EVA, 'MaximumDopplerShift', 70,'NormalizePathGains',true,'DopplerSpectrum', doppler('Jakes'), ...
-%     'ChannelFiltering', false, ...
-%     'NumSamples', 10000000);
-% chETU = comm.RayleighChannel('SampleRate',FsETU,'PathDelays',path_delay_ETU,'AveragePathGains',APG_ETU, 'MaximumDopplerShift', 300,'NormalizePathGains',true,'DopplerSpectrum', doppler('Jakes'), ...
-%     'ChannelFiltering', false, ...
-%     'NumSamples', 10000000);
-% pg_EPA = chEPA();
-% pg_EVA = chEVA();
-% pg_ETU = chETU();
-% 
-% 
-% g1 = pg_EPA(:,1);
-% g2 = pg_EVA(:,1);
-% g3 = pg_ETU(:,1);
-% 
-% Lw = 1000;
-% 
-% [P1, f1] = pwelch(g1, hamming(Lw), ...
-%     Lw/2, 2000, FsDoppler1, 'centered');
-% [P2, f2] = pwelch(g2, hamming(Lw), ...
-%     Lw/2, 2000, FsDoppler2, 'centered');
-% [P3, f3] = pwelch(g3, hamming(Lw), ...
-%     Lw/2, 2000, FsDoppler3, 'centered');
-% 
-% figure;
-% plot(f1, 10*log10(P1));
-% hold on;
-% grid on;
-% plot(f2, 10*log10(P2));
-% plot(f3, 10*log10(P3));
-% 
-% xlabel('Доплеровская частота, Гц');
-% ylabel('PSD, дБ');
-% title(' доплеровский спектр');
-% 
-% xlim([-400 400]);
+FsEPA = 100;
+FsEVA = 1000;
+FsETU = 10000;
+
+chEPA = comm.RayleighChannel('SampleRate',FsEPA,'PathDelays',path_delay_EPA,'AveragePathGains',APG_EPA, 'MaximumDopplerShift', 5,'NormalizePathGains',true,'DopplerSpectrum', doppler('Jakes'), ...
+    'ChannelFiltering', false, ...
+    'NumSamples', 1000000);
+chEVA = comm.RayleighChannel('SampleRate',FsEVA,'PathDelays',path_delay_EVA,'AveragePathGains',APG_EVA, 'MaximumDopplerShift', 70,'NormalizePathGains',true,'DopplerSpectrum', doppler('Jakes'), ...
+    'ChannelFiltering', false, ...
+    'NumSamples', 1000000);
+chETU = comm.RayleighChannel('SampleRate',FsETU,'PathDelays',path_delay_ETU,'AveragePathGains',APG_ETU, 'MaximumDopplerShift', 300,'NormalizePathGains',true,'DopplerSpectrum', doppler('Jakes'), ...
+    'ChannelFiltering', false, ...
+    'NumSamples', 1000000);
+pg_EPA = chEPA();
+pg_EVA = chEVA();
+pg_ETU = chETU();
+
+
+g1 = pg_EPA(:,1);
+g2 = pg_EVA(:,1);
+g3 = pg_ETU(:,1);
+
+Lw = 1000;
+
+[P1, f1] = pwelch(g1, [], [], Nfft, FsEPA, 'centered');
+[P2, f2] = pwelch(g2, [], [], Nfft, FsEVA, 'centered');
+[P3, f3] = pwelch(g3, [], [], Nfft, FsETU, 'centered');
+
+figure;
+plot(f1, 10*log10(P1));
+hold on;
+grid on;
+plot(f2, 10*log10(P2));
+plot(f3, 10*log10(P3));
+
+xlabel('Доплеровская частота, Гц');
+ylabel('PSD, дБ');
+title(' доплеровский спектр');
+
+xlim([-400 400]);
+%% теор спектр
+% Параметры
+f_d = 70;               
+f_plot = -150:0.1:150;   
+
+S = zeros(size(f_plot));
+
+
+mask = abs(f_plot) <= f_d;
+S(mask) = 1 ./ (pi * f_d * sqrt(max(0, 1 - (f_plot(mask) / f_d).^2)));
+
+% Защита от деления на ноль и очень малых значений перед логарифмом
+S_safe = S;
+S_safe(S_safe == 0) = 1e-12;         
+
+S_dB = 20 * log10(S_safe);
+
+% Построение графика
+figure;
+plot(f_plot, S_dB, 'b-', 'LineWidth', 2);
+grid on;
+xlabel('Частота Допплера (Гц)');
+ylabel('Амплитуда спектра (дБ)');
+title(['Спектр Джейкса в дБ, f_d = ' num2str(f_d) ' Гц']);
+xlim([-150 150]);
+
+ylim([-80 20]); 
+
 %% Время и полоса когерентности каналов
-P_EPA = 10.^(APG_EPA / 20);
-P_EVA = 10.^(APG_EVA / 20);
-P_ETU = 10.^(APG_ETU / 20);
-
-tao_rms_EPA = sqrt(sum(P_EPA.*(path_delay_EPA - sum(P_EPA.*path_delay_EPA)/sum(P_EPA)).^2)/sum(P_EPA));
-tao_rms_EVA = sqrt(sum(P_EVA.*(path_delay_EVA - sum(P_EVA.*path_delay_EVA)/sum(P_EVA)).^2)/sum(P_EVA));
-tao_rms_ETU = sqrt(sum(P_ETU.*(path_delay_ETU - sum(P_ETU.*path_delay_ETU)/sum(P_ETU)).^2)/sum(P_ETU));
-
-Bc_EPA = 1/(5*tao_rms_EPA);
-Bc_EVA = 1/(5*tao_rms_EVA);
-Bc_ETU = 1/(5*tao_rms_ETU);
-
-Tc_EPA = 0.423/(fd_epa);
-Tc_EVA = 0.423/(fd_eva);
-Tc_ETU = 0.423/(fd_etu);
-
-disp('время когерентности и полоса когерентности каналов:');
-disp(['EPA: Tc = ', num2str(Tc_EPA), ' с, Bc = ', num2str(Bc_EPA), ' Гц']);
-disp(['EVA: Tc = ', num2str(Tc_EVA), ' с, Bc = ', num2str(Bc_EVA), ' Гц']);
-disp(['ETU: Tc = ', num2str(Tc_ETU), ' с, Bc = ', num2str(Bc_ETU), ' Гц']);
+% P_EPA = 10.^(APG_EPA / 20);
+% P_EVA = 10.^(APG_EVA / 20);
+% P_ETU = 10.^(APG_ETU / 20);
+% 
+% tao_rms_EPA = sqrt(sum(P_EPA.*(path_delay_EPA - sum(P_EPA.*path_delay_EPA)/sum(P_EPA)).^2)/sum(P_EPA));
+% tao_rms_EVA = sqrt(sum(P_EVA.*(path_delay_EVA - sum(P_EVA.*path_delay_EVA)/sum(P_EVA)).^2)/sum(P_EVA));
+% tao_rms_ETU = sqrt(sum(P_ETU.*(path_delay_ETU - sum(P_ETU.*path_delay_ETU)/sum(P_ETU)).^2)/sum(P_ETU));
+% 
+% Bc_EPA = 1/(tao_rms_EPA);
+% Bc_EVA = 1/(tao_rms_EVA);
+% Bc_ETU = 1/(tao_rms_ETU);
+% 
+% Tc_EPA = 1/(fd_epa);
+% Tc_EVA = 1/(fd_eva);
+% Tc_ETU = 1/(fd_etu);
+% 
+% % Оценка плосы и времени взяты из лекций
+%
+% disp('время когерентности и полоса когерентности каналов:');
+% disp(['EPA: Tc = ', num2str(Tc_EPA), ' с, Bc = ', num2str(Bc_EPA), ' Гц']);
+% disp(['EVA: Tc = ', num2str(Tc_EVA), ' с, Bc = ', num2str(Bc_EVA), ' Гц']);
+% disp(['ETU: Tc = ', num2str(Tc_ETU), ' с, Bc = ', num2str(Bc_ETU), ' Гц']);
 %% Теоретическая кривая
 
-% % Коэффициент частотной избыточности
-% L_data = length(Y_inf) / Nfft; 
-% 
-% EbN0_vector = SNR_vector-10*log10(k_inf)-10*log10(L_data);
-% EbN0_linear = 10.^(EbN0_vector/10);
-% 
-% % Теоретический BER для 16-QAM в канале АБГШ
-% BER_theory = berawgn(EbN0_vector, 'qam', M_inf);
-% 
-% BER_theory_Rayleigh = berfading(EbN0_vector, 'qam', M_inf,1);
-% % Построение графика
-% 
-% figure;
-% 
-% % 1. текущий эксперимент в канале с замираниями (Синий маркер)
-% semilogy(SNR_vector, BER_vector, 'b-o', 'LineWidth', 2, 'MarkerFaceColor', 'b');
-% hold on;
-% 
-% % 2. Теория для канала замираний Рэлея (Зеленый пунктир) — ЭТАЛОН ДЛЯ ЭТОГО ТЕСТА
+% Коэффициент частотной избыточности
+P_const = mean(abs(qammod(0:M_inf-1, M_inf)).^2);   % = 10
+EbN0_vector = SNR_vector - 10*log10(P_const);
+
+% Теоретический BER для 16-QAM в канале АБГШ
+BER_theory = berawgn(EbN0_vector, 'qam', M_inf);
+
+BER_theory_Rayleigh = berfading(EbN0_vector, 'qam', M_inf,1);
+% Построение графика
+
+figure;
+
+% 1. текущий эксперимент в канале с замираниями (Синий маркер)
+semilogy(SNR_vector, BER_vector, 'b-o', 'LineWidth', 2, 'MarkerFaceColor', 'b');
+hold on;
+
+% 2. Теория для канала замираний Рэлея (Зеленый пунктир) — ЭТАЛОН ДЛЯ ЭТОГО ТЕСТА
 % semilogy(SNR_vector, BER_theory_Rayleigh, 'g--', 'LineWidth', 2);
-% 
-% % 3. Теория для канала АБГШ (Красный точечный) — ваша проверенная идеальная прямая
-% % semilogy(SNR_vector, BER_theory, 'r:', 'LineWidth', 1.5);
-% 
-% hold off;
-% grid on;
-% 
-% % Настройка масштаба осей
-% xlim([min(SNR_vector), max(SNR_vector)]);
-% ylim([1e-4, 1]); 
-% 
-% xlabel('SNR, дБ');
-% ylabel('BER');
-% title('Кривая помехоустойчивости OFDM-системы в канале с замираниями');
-% 
-% legend('Экспериментальный BER ', ...
-%        'Теоретический BER ', ...
-%        'Location', 'SouthWest');
+
+% 3. Теория для канала АБГШ (Красный точечный) — ваша проверенная идеальная прямая
+semilogy(SNR_vector, BER_theory, 'r:', 'LineWidth', 1.5);
+
+hold off;
+grid on;
+
+% Настройка масштаба осей
+xlim([min(SNR_vector), max(SNR_vector)]);
+ylim([1e-4, 1]); 
+
+xlabel('SNR, дБ');
+ylabel('BER');
+title('Кривая помехоустойчивости OFDM-системы в канале с замираниями');
+
+legend('Экспериментальный BER ', ...
+       'Теоретический BER ', ...
+       'Location', 'SouthWest');
 %% График для сравнения бер каналов
 % figure;
 % 
@@ -316,12 +333,12 @@ disp(['ETU: Tc = ', num2str(Tc_ETU), ' с, Bc = ', num2str(Bc_ETU), ' Гц']);
 % 
 
 %% График MSE от SNR
-figure;
-plot(SNR_vector,MSE_vector_linear)
-hold on
-plot(SNR_vector,MSE_vector_nearest)
-plot(SNR_vector,MSE_vector_spline)
-xlabel('SNR, дБ');
-ylabel('MSE');
-title('зависимость MSE оценки канала от SNR');
-legend('linear', 'nearest','spline');
+% figure;
+% plot(SNR_vector,MSE_vector_linear)
+% hold on
+% plot(SNR_vector,MSE_vector_nearest)
+% plot(SNR_vector,MSE_vector_spline)
+% xlabel('SNR, дБ');
+% ylabel('MSE');
+% title('зависимость MSE оценки канала от SNR');
+% legend('linear', 'nearest','spline');
